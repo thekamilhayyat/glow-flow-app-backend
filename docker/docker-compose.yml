@@ -1,0 +1,62 @@
+version: '3.9'
+services:
+  postgres:
+    image: postgres:16
+    container_name: glow_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: glowdesk
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: glow_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.test
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    container_name: glow_api
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: glowdesk
+      JWT_SECRET: dev-secret
+      JWT_EXPIRES: 15m
+      SWAGGER_ENABLED: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../src:/app/src
+      - ../tsconfig.json:/app/tsconfig.json
+      - ../tsconfig.build.json:/app/tsconfig.build.json
+      - ../nest-cli.json:/app/nest-cli.json
+    command: sh -c "npm run build && node dist/main.js"
+
+volumes:
+  pgdata:
+
+
