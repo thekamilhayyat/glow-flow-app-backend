@@ -1,0 +1,430 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SALON_OWNER
+  SALON_MANAGER
+  STAFF
+  CLIENT
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum NotificationType {
+  APPOINTMENT_BOOKED
+  APPOINTMENT_CANCELLED
+  PAYMENT_SUCCEEDED
+  LOW_STOCK
+}
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  firstName     String?
+  lastName      String?
+  phone         String?
+  role          UserRole @default(CLIENT)
+  emailVerified Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  currentSalonId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  ownedSalons   Salon[]  @relation("SalonOwner")
+  salonMembers  SalonMember[]
+  appointments  Appointment[]
+  sales         Sale[]
+  createdClients Client[] @relation("ClientCreator")
+  emailVerificationToken EmailVerificationToken?
+
+  @@index([email])
+  @@index([currentSalonId])
+}
+
+model Salon {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  ownerId     String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  owner       User     @relation("SalonOwner", fields: [ownerId], references: [id])
+  members     SalonMember[]
+  settings    SalonSettings?
+  clients     Client[]
+  staff       Staff[]
+  services    Service[]
+  appointments Appointment[]
+  sales       Sale[]
+  products    Product[]
+  payments    Payment[]
+  notifications Notification[]
+
+  @@index([slug])
+  @@index([ownerId])
+}
+
+model SalonMember {
+  id        String   @id @default(uuid())
+  salonId   String
+  userId    String
+  role      UserRole
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  salon     Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([salonId, userId])
+  @@index([salonId])
+  @@index([userId])
+}
+
+model SalonSettings {
+  id        String   @id @default(uuid())
+  salonId   String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Business Profile
+  businessName       String?
+  businessEmail     String?
+  businessPhone     String?
+  businessAddress   String?
+  businessCity      String?
+  businessState     String?
+  businessZip       String?
+  businessCountry   String?
+  businessWebsite   String?
+  businessLogo      String?
+
+  // Business Hours (JSON)
+  businessHours     Json?
+
+  // Booking Settings
+  bookingAdvanceDays    Int?
+  bookingCancellationHours Int?
+  allowOnlineBooking    Boolean?
+  requireConfirmation   Boolean?
+  autoConfirm           Boolean?
+  bufferTimeMinutes     Int?
+
+  // Tax Settings
+  taxEnabled            Boolean?
+  taxRate               Decimal?  @db.Decimal(5, 4)
+  taxIncluded           Boolean?
+
+  // Payment Settings
+  paymentMethods        Json?
+  requireDeposit        Boolean?
+  depositAmount         Decimal?  @db.Decimal(10, 2)
+  depositPercentage     Decimal?  @db.Decimal(5, 2)
+
+  // Notification Settings
+  emailNotifications    Json?
+  smsNotifications      Json?
+
+  // Appearance Settings
+  primaryColor          String?
+  secondaryColor        String?
+  logoUrl               String?
+  faviconUrl            String?
+
+  // Integration Settings (encrypted)
+  integrationSettings   String? // Encrypted JSON
+
+  // Additional Settings (JSON)
+  additionalSettings    Json?
+
+  salon                 Salon     @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@index([salonId])
+}
+
+model Client {
+  id          String   @id @default(uuid())
+  salonId     String
+  firstName   String
+  lastName    String?
+  email       String?
+  phone       String?
+  dateOfBirth DateTime?
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  salon       Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  creator     User?    @relation("ClientCreator", fields: [createdById], references: [id])
+  appointments Appointment[]
+  sales       Sale[]
+
+  @@index([salonId])
+  @@index([email])
+  @@index([phone])
+}
+
+model Staff {
+  id          String   @id @default(uuid())
+  salonId     String
+  userId      String?
+  firstName   String
+  lastName    String?
+  email       String?
+  phone       String?
+  role        UserRole @default(STAFF)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  salon       Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+  serviceStaff ServiceStaff[]
+  sales       Sale[]
+
+  @@index([salonId])
+  @@index([userId])
+}
+
+model Service {
+  id          String   @id @default(uuid())
+  salonId     String
+  name        String
+  description String?
+  duration    Int      // minutes
+  price       Decimal  @db.Decimal(10, 2)
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  salon       Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  serviceStaff ServiceStaff[]
+  appointmentServices AppointmentService[]
+
+  @@index([salonId])
+  @@index([category])
+}
+
+model ServiceStaff {
+  id        String   @id @default(uuid())
+  serviceId String
+  staffId   String
+  createdAt DateTime @default(now())
+
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, staffId])
+  @@index([serviceId])
+  @@index([staffId])
+}
+
+model Appointment {
+  id          String            @id @default(uuid())
+  salonId     String
+  clientId    String
+  staffId     String?
+  status      AppointmentStatus @default(PENDING)
+  startTime   DateTime
+  endTime     DateTime
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  createdById String?
+
+  salon       Salon             @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  client      Client            @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  staff       Staff?            @relation(fields: [staffId], references: [id])
+  creator     User?             @relation(fields: [createdById], references: [id])
+  services    AppointmentService[]
+  sale        Sale?
+  payment     Payment?
+
+  @@index([salonId])
+  @@index([clientId])
+  @@index([staffId])
+  @@index([startTime])
+  @@index([status])
+}
+
+model AppointmentService {
+  id            String      @id @default(uuid())
+  appointmentId String
+  serviceId     String
+  price         Decimal     @db.Decimal(10, 2)
+  duration      Int
+  createdAt     DateTime    @default(now())
+
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service       Service     @relation(fields: [serviceId], references: [id])
+
+  @@index([appointmentId])
+  @@index([serviceId])
+}
+
+model Sale {
+  id          String     @id @default(uuid())
+  salonId     String
+  appointmentId String?  @unique
+  clientId    String?
+  staffId     String?
+  status      SaleStatus @default(PENDING)
+  subtotal    Decimal    @db.Decimal(10, 2)
+  tax         Decimal    @db.Decimal(10, 2)
+  total       Decimal    @db.Decimal(10, 2)
+  paymentMethod String?
+  notes       String?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  createdById String?
+
+  salon       Salon      @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id])
+  creator     User?     @relation(fields: [createdById], references: [id])
+  client      Client?   @relation(fields: [clientId], references: [id])
+  staff       Staff?    @relation(fields: [staffId], references: [id])
+  items       SaleItem[]
+
+  @@index([salonId])
+  @@index([clientId])
+  @@index([staffId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model SaleItem {
+  id          String   @id @default(uuid())
+  saleId      String
+  productId   String?
+  serviceId   String?
+  name        String
+  quantity    Int      @default(1)
+  price       Decimal  @db.Decimal(10, 2)
+  subtotal    Decimal  @db.Decimal(10, 2)
+  createdAt   DateTime @default(now())
+
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([serviceId])
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  salonId     String
+  name        String
+  description String?
+  sku         String?
+  price       Decimal  @db.Decimal(10, 2)
+  cost        Decimal? @db.Decimal(10, 2)
+  stock       Int      @default(0)
+  category    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  salon       Salon    @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@index([salonId])
+  @@index([sku])
+  @@index([category])
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  salonId       String
+  appointmentId String?       @unique
+  saleId        String?
+  amount        Decimal       @db.Decimal(10, 2)
+  currency      String         @default("usd")
+  status        PaymentStatus @default(PENDING)
+  paymentMethod String?
+  stripePaymentIntentId String? @unique
+  stripeClientSecret String?
+  metadata      Json?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  salon         Salon          @relation(fields: [salonId], references: [id], onDelete: Cascade)
+  appointment   Appointment?   @relation(fields: [appointmentId], references: [id])
+
+  @@index([salonId])
+  @@index([appointmentId])
+  @@index([saleId])
+  @@index([status])
+  @@index([stripePaymentIntentId])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  salonId     String
+  userId      String?
+  type        NotificationType
+  title       String
+  message     String
+  entityId    String?
+  isRead      Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  salon       Salon            @relation(fields: [salonId], references: [id], onDelete: Cascade)
+
+  @@index([salonId])
+  @@index([userId])
+  @@index([isRead])
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
+  @@index([expiresAt])
+}
